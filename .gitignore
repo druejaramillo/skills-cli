@@ -1,0 +1,36 @@
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Often CLI builds are outputted to a local bin/ or dist/ folder
+bin/
+dist/
+build/
+
+# Test artifacts
+*.test
+*.out
+*.coverprofile
+profile.cov
+
+# Dependency directories
+# Only uncomment vendor/ if you explicitly intend to use vendored dependencies
+# vendor/
+
+# Go workspaces
+go.work
+go.work.sum
+
+# Local env & config
+.env
+.env.local
+config.local.yaml
+config.local.json
+
+# Coding agents
+.agents/
+.claude/
+.opencode/
