@@ -1,0 +1,79 @@
+package project
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCopySkillAndReplace(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source", "tdd")
+	writeSkill(t, source, "tdd")
+	if err := os.MkdirAll(filepath.Join(source, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "references", "guide.md"), []byte("guide"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".git"), []byte("gitdir: ignored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := SkillPath(filepath.Join(root, "project"), "tdd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CopySkill(source, destination, false); err != nil {
+		t.Fatalf("CopySkill: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "references", "guide.md")); err != nil {
+		t.Fatalf("copied reference missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("copied Git metadata: %v", err)
+	}
+	if err := CopySkill(source, destination, false); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("CopySkill collision error = %v, want collision", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "new.md"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopySkill(source, destination, true); err != nil {
+		t.Fatalf("CopySkill force: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "new.md")); err != nil {
+		t.Fatalf("forced copy did not replace destination: %v", err)
+	}
+}
+
+func TestRemoveSkill(t *testing.T) {
+	root := t.TempDir()
+	skill, err := SkillPath(root, "tdd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSkill(t, skill, "tdd")
+	neighbor := filepath.Join(root, ".agents", "skills", "other")
+	writeSkill(t, neighbor, "other")
+	if err := RemoveSkill(root, "tdd"); err != nil {
+		t.Fatalf("RemoveSkill: %v", err)
+	}
+	if _, err := os.Stat(neighbor); err != nil {
+		t.Fatalf("remove affected neighboring skill: %v", err)
+	}
+	if err := RemoveSkill(root, "../other"); err == nil {
+		t.Fatal("RemoveSkill accepted traversal name")
+	}
+}
+
+func writeSkill(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contents := "---\nname: " + name + "\ndescription: Test skill.\n---\n\n# Test\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
