@@ -32,6 +32,44 @@ func TestAddAndRemove(t *testing.T) {
 	}
 }
 
+func TestListSkills(t *testing.T) {
+	root := t.TempDir()
+	app := &App{
+		WorkingDir: filepath.Join(root, "project"),
+		Stdout:     &bytes.Buffer{},
+		Stderr:     &bytes.Buffer{},
+	}
+	for _, name := range []string{"alpha", "beta", "no-skill-file"} {
+		if err := os.MkdirAll(filepath.Join(app.WorkingDir, ".agents", "skills", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(app.WorkingDir, ".agents", "skills", "alpha", "SKILL.md"), []byte("---\nname: alpha\ndescription: Alpha skill.\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app.WorkingDir, ".agents", "skills", "beta", "SKILL.md"), []byte("# Beta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.Run(context.Background(), []string{"list"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := "alpha\tAlpha skill.\nbeta\n"
+	if got := app.Stdout.(*bytes.Buffer).String(); got != want {
+		t.Fatalf("list output = %q, want %q", got, want)
+	}
+}
+
+func TestListSkillsWhenNoneAreInstalled(t *testing.T) {
+	app := &App{WorkingDir: t.TempDir(), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	if err := app.Run(context.Background(), []string{"list"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if got := app.Stdout.(*bytes.Buffer).String(); got != "No skills are installed.\n" {
+		t.Fatalf("list output = %q", got)
+	}
+}
+
 func TestCreatePublishesAfterOpenCodeSession(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")

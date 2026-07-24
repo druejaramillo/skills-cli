@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/druejaramillo/skills-cli/internal/source"
 )
@@ -20,6 +21,53 @@ func SkillPath(root, name string) (string, error) {
 
 func AgentsPath(root string) string {
 	return filepath.Join(root, "AGENTS.md")
+}
+
+type SkillSummary struct {
+	Name        string
+	Description string
+}
+
+func ListSkills(root string) ([]SkillSummary, error) {
+	skillsRoot := filepath.Join(root, ".agents", "skills")
+	entries, err := os.ReadDir(skillsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read project skills directory: %w", err)
+	}
+
+	summaries := make([]SkillSummary, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(skillsRoot, entry.Name(), "SKILL.md")
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("inspect skill %q: %w", entry.Name(), err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("skill file %q is not a regular file", path)
+		}
+
+		summary := SkillSummary{Name: entry.Name()}
+		name, description, present, err := source.ReadSkillFrontmatter(path)
+		if err != nil {
+			return nil, fmt.Errorf("read skill %q: %w", entry.Name(), err)
+		}
+		if present {
+			summary.Name = name
+			summary.Description = description
+		}
+		summaries = append(summaries, summary)
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
+	return summaries, nil
 }
 
 func ValidateAgentsFile(path string) error {

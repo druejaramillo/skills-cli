@@ -273,10 +273,31 @@ func ValidateSkillDirectory(path string) (Skill, error) {
 	return Skill{Name: name, Path: path}, nil
 }
 
+func ReadSkillFrontmatter(path string) (name, description string, present bool, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "", false, fmt.Errorf("read skill frontmatter %q: %w", path, err)
+	}
+	defer file.Close()
+
+	return parseOptionalFrontmatter(file)
+}
+
 func parseFrontmatter(file *os.File) (string, string, error) {
+	name, description, present, err := parseOptionalFrontmatter(file)
+	if err != nil {
+		return "", "", err
+	}
+	if !present {
+		return "", "", errors.New("must begin with YAML frontmatter")
+	}
+	return name, description, nil
+}
+
+func parseOptionalFrontmatter(file *os.File) (string, string, bool, error) {
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		return "", "", errors.New("must begin with YAML frontmatter")
+		return "", "", false, nil
 	}
 	var name, description string
 	closed := false
@@ -299,15 +320,15 @@ func parseFrontmatter(file *os.File) (string, string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", "", fmt.Errorf("read frontmatter: %w", err)
+		return "", "", true, fmt.Errorf("read frontmatter: %w", err)
 	}
 	if !closed {
-		return "", "", errors.New("frontmatter is not closed")
+		return "", "", true, errors.New("frontmatter is not closed")
 	}
 	if name == "" {
-		return "", "", errors.New("name is required")
+		return "", "", true, errors.New("name is required")
 	}
-	return name, description, nil
+	return name, description, true, nil
 }
 
 func Resolve(skills []Skill, reference string) (Skill, error) {

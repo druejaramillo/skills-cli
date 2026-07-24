@@ -54,6 +54,8 @@ func (app *App) Run(ctx context.Context, args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "list":
+		return app.runList(args[1:])
 	case "source":
 		return app.runSource(args[1:])
 	case "add":
@@ -69,6 +71,28 @@ func (app *App) Run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q; run `skills --help`", args[0])
 	}
+}
+
+func (app *App) runList(args []string) error {
+	if len(args) != 0 {
+		return errors.New("usage: skills list")
+	}
+	skills, err := project.ListSkills(app.WorkingDir)
+	if err != nil {
+		return err
+	}
+	if len(skills) == 0 {
+		fmt.Fprintln(app.Stdout, "No skills are installed.")
+		return nil
+	}
+	for _, skill := range skills {
+		if skill.Description == "" {
+			fmt.Fprintln(app.Stdout, skill.Name)
+			continue
+		}
+		fmt.Fprintf(app.Stdout, "%s\t%s\n", skill.Name, skill.Description)
+	}
+	return nil
 }
 
 func (app *App) runSource(args []string) error {
@@ -550,6 +574,7 @@ func (app *App) usage() {
 	fmt.Fprint(app.Stdout, `Skills installs and creates Agent Skills.
 
 Usage:
+  skills list
   skills source add <name> <path-or-git-url> [--default]
   skills source list
   skills source remove <name>

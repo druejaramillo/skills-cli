@@ -50,6 +50,12 @@ skills remove tdd
 
 The entire skill directory is copied to `.agents/skills/tdd`, including `scripts`, `references`, and `assets`. Existing skills are protected unless `--force` is supplied.
 
+List the skills installed in the current project:
+
+```bash
+skills list
+```
+
 ## Create a Skill
 
 Configure the model that OpenCode should use:
