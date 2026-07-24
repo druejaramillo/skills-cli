@@ -91,7 +91,7 @@ func TestCreateWithoutSkillDoesNotPublish(t *testing.T) {
 	}
 }
 
-func TestAgentsCreateWritesProjectAGENTS(t *testing.T) {
+func TestAgentsGenerateWritesProjectAGENTS(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
 	}
@@ -108,18 +108,18 @@ func TestAgentsCreateWritesProjectAGENTS(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	app := testApp(t, root, sourceRoot, "test/model")
-	if err := app.Run(context.Background(), []string{"agents", "create"}); err != nil {
-		t.Fatalf("agents create: %v", err)
+	if err := app.Run(context.Background(), []string{"agents", "generate"}); err != nil {
+		t.Fatalf("agents generate: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(app.WorkingDir, "AGENTS.md")); err != nil {
 		t.Fatalf("AGENTS.md missing: %v", err)
 	}
 	if !strings.Contains(app.Stdout.(*bytes.Buffer).String(), "Created") {
-		t.Fatalf("agents create output = %q", app.Stdout.(*bytes.Buffer).String())
+		t.Fatalf("agents generate output = %q", app.Stdout.(*bytes.Buffer).String())
 	}
 }
 
-func TestAgentsCreateRequiresForce(t *testing.T) {
+func TestAgentsGenerateRequiresForce(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")
 	writeAgentsFragment(t, filepath.Join(sourceRoot, "agents-md", "go.md"), "# Go\n")
@@ -127,8 +127,94 @@ func TestAgentsCreateRequiresForce(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(app.WorkingDir, "AGENTS.md"), []byte("existing\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Run(context.Background(), []string{"agents", "create"}); err == nil || !strings.Contains(err.Error(), "--force") {
+	if err := app.Run(context.Background(), []string{"agents", "generate"}); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("agents generate collision error = %v", err)
+	}
+}
+
+func TestAgentsCreatePublishesFragment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper is a POSIX shell script")
+	}
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nstaging=$(printf '%s' \"$5\" | tr '\\n' ' ' | cut -d '`' -f4)\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' '# HTMX' 'Use server-rendered HTML.' > \"$staging\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	app := testApp(t, root, sourceRoot, "test/model")
+	if err := app.Run(context.Background(), []string{"agents", "create", "frontend/htmx"}); err != nil {
+		t.Fatalf("agents create: %v", err)
+	}
+	published := filepath.Join(sourceRoot, "agents-md", "frontend", "htmx.md")
+	if _, err := os.Stat(published); err != nil {
+		t.Fatalf("published fragment missing: %v", err)
+	}
+	if !strings.Contains(app.Stdout.(*bytes.Buffer).String(), "published") {
+		t.Fatalf("agents create output = %q", app.Stdout.(*bytes.Buffer).String())
+	}
+}
+
+func TestAgentsCreateWithoutFragmentDoesNotPublish(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper is a POSIX shell script")
+	}
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	app := testApp(t, root, sourceRoot, "test/model")
+	if err := app.Run(context.Background(), []string{"agents", "create", "go"}); err != nil {
+		t.Fatalf("agents create: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sourceRoot, "agents-md", "go.md")); !os.IsNotExist(err) {
+		t.Fatalf("fragment was published without generated output: %v", err)
+	}
+	if !strings.Contains(app.Stdout.(*bytes.Buffer).String(), "nothing was published") {
+		t.Fatalf("agents create output = %q", app.Stdout.(*bytes.Buffer).String())
+	}
+}
+
+func TestAgentsCreateRejectsExistingFragment(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	writeAgentsFragment(t, filepath.Join(sourceRoot, "agents-md", "go.md"), "# Go\n")
+	app := testApp(t, root, sourceRoot, "test/model")
+	if err := app.Run(context.Background(), []string{"agents", "create", "go"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("agents create collision error = %v", err)
+	}
+}
+
+func TestAgentsCreateRejectsRemoteSource(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config.json")
+	if err := config.Save(configPath, config.Config{
+		DefaultSource: "mine",
+		Sources:       map[string]config.Source{"mine": {Location: "https://example.com/skills.git", Remote: true}},
+		Creator:       config.Creator{Model: "test/model"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{ConfigPath: configPath, CacheDir: filepath.Join(root, "cache"), WorkingDir: t.TempDir(), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	if err := app.Run(context.Background(), []string{"agents", "create", "go"}); err == nil || !strings.Contains(err.Error(), "remote") {
+		t.Fatalf("agents create remote source error = %v", err)
 	}
 }
 

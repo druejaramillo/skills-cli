@@ -76,6 +76,41 @@ func TestDiscoverAgentsFragmentsRequiresMarkdown(t *testing.T) {
 	}
 }
 
+func TestAgentsFragmentPath(t *testing.T) {
+	root := t.TempDir()
+	path, relative, err := AgentsFragmentPath(root, "frontend/htmx")
+	if err != nil {
+		t.Fatalf("AgentsFragmentPath: %v", err)
+	}
+	if path != filepath.Join(root, "agents-md", "frontend", "htmx.md") || relative != "agents-md/frontend/htmx.md" {
+		t.Fatalf("AgentsFragmentPath = %q, %q", path, relative)
+	}
+	for _, reference := range []string{"", "go.md", "../go", "/go", "frontend\\htmx", "frontend//htmx"} {
+		if _, _, err := AgentsFragmentPath(root, reference); err == nil {
+			t.Fatalf("AgentsFragmentPath accepted %q", reference)
+		}
+	}
+}
+
+func TestValidateAgentsFragment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "go.md")
+	if err := ValidateAgentsFragment(path); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing fragment error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(" \n\t"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAgentsFragment(path); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty fragment error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("# Go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAgentsFragment(path); err != nil {
+		t.Fatalf("ValidateAgentsFragment: %v", err)
+	}
+}
+
 func TestAddLocation(t *testing.T) {
 	src, err := AddLocation("acme/skills")
 	if err != nil {

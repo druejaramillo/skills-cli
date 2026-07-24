@@ -90,6 +90,28 @@ func TestAgentsPathAndValidation(t *testing.T) {
 	}
 }
 
+func TestPublishFile(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "generated.md")
+	if err := os.WriteFile(from, []byte("# Guidance\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	to := filepath.Join(root, "source", "agents-md", "go.md")
+	if err := PublishFile(from, to); err != nil {
+		t.Fatalf("PublishFile: %v", err)
+	}
+	contents, err := os.ReadFile(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "# Guidance\n" {
+		t.Fatalf("published contents = %q", contents)
+	}
+	if err := PublishFile(from, to); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("PublishFile collision error = %v", err)
+	}
+}
+
 func writeSkill(t *testing.T, dir, name string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

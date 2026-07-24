@@ -15,6 +15,9 @@ var promptTemplate string
 //go:embed agents_prompt.md
 var agentsPromptTemplate string
 
+//go:embed agents_fragment_prompt.md
+var agentsFragmentPromptTemplate string
+
 type Request struct {
 	ProjectPath string
 	SkillName   string
@@ -36,6 +39,18 @@ type AgentsRequest struct {
 	Stderr        io.Writer
 }
 
+type AgentsFragmentRequest struct {
+	ProjectPath  string
+	SourceRoot   string
+	FragmentPath string
+	StagingPath  string
+	Model        string
+	Command      string
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+}
+
 func Run(ctx context.Context, request Request) error {
 	prompt := strings.ReplaceAll(promptTemplate, "{{SKILL_NAME}}", request.SkillName)
 	prompt = strings.ReplaceAll(prompt, "{{PROJECT_PATH}}", request.ProjectPath)
@@ -46,6 +61,14 @@ func RunAgents(ctx context.Context, request AgentsRequest) error {
 	prompt := strings.ReplaceAll(agentsPromptTemplate, "{{PROJECT_PATH}}", request.ProjectPath)
 	prompt = strings.ReplaceAll(prompt, "{{SOURCE_ROOT}}", request.SourceRoot)
 	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATHS}}", strings.Join(request.FragmentPaths, "\n"))
+	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
+}
+
+func RunAgentsFragment(ctx context.Context, request AgentsFragmentRequest) error {
+	prompt := strings.ReplaceAll(agentsFragmentPromptTemplate, "{{PROJECT_PATH}}", request.ProjectPath)
+	prompt = strings.ReplaceAll(prompt, "{{SOURCE_ROOT}}", request.SourceRoot)
+	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATH}}", request.FragmentPath)
+	prompt = strings.ReplaceAll(prompt, "{{STAGING_PATH}}", request.StagingPath)
 	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
 }
 

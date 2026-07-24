@@ -14,7 +14,7 @@ For a local checkout:
 go install ./cmd/skills
 ```
 
-`skills add` requires Git only for remote sources. `skills create` and `skills agents create` also require [OpenCode](https://opencode.ai), plus an authenticated provider and model configured through `opencode providers`.
+`skills add` requires Git only for remote sources. `skills create`, `skills agents create`, and `skills agents generate` also require [OpenCode](https://opencode.ai), plus an authenticated provider and model configured through `opencode providers`.
 
 ## Sources
 
@@ -69,7 +69,7 @@ This opens OpenCode's normal interactive terminal UI, preloaded with instruction
 
 Skills never commits or pushes. Review the source repository and commit or push it yourself.
 
-## Create AGENTS.md
+## Create Agent Fragments
 
 Sources can also provide Markdown fragments for project-level agent guidance. Put them below a source-root `agents-md/` directory; nested directories are supported:
 
@@ -82,17 +82,28 @@ my-skills/
       tailwind.md
 ```
 
-Use the same OpenCode model configuration as skill creation, then start an interactive session:
+Use the same OpenCode model configuration as skill creation, then start an interactive session for an extensionless fragment path:
 
 ```bash
-skills agents create
-skills agents create --source mine --model openai/gpt-5.6-terra
+skills agents create go --source mine
+skills agents create frontend/htmx --source mine --model openai/gpt-5.6-terra
 ```
 
-OpenCode inspects the project, asks about its stack and conventions, reads the relevant fragments from the selected source, and writes a concise `AGENTS.md` in the current project directory. Local sources are read directly; remote sources are refreshed in the cache before the session. Existing `AGENTS.md` files are protected unless `--force` is supplied:
+OpenCode inspects the current project and interviews you about the fragment's topic, standards, and constraints. It writes one Markdown fragment, then `skills` validates and publishes it into the local source. Existing fragments are protected from replacement. Review and commit the source change yourself; `skills` never commits or pushes. Remote sources cannot be used because this command publishes a change.
+
+## Generate AGENTS.md
+
+Generate a concise project-root `AGENTS.md` from the relevant fragments in a selected source:
 
 ```bash
-skills agents create --force
+skills agents generate
+skills agents generate --source mine --model openai/gpt-5.6-terra
+```
+
+OpenCode inspects the project, asks about its stack and conventions, and reads the relevant fragments from the selected source. Local sources are read directly; remote sources are refreshed in the cache before the session. Existing `AGENTS.md` files are protected unless `--force` is supplied:
+
+```bash
+skills agents generate --force
 ```
 
 Use `skills --help` for the complete command reference.

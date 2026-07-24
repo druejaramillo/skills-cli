@@ -36,6 +36,44 @@ func ValidateName(name string) error {
 	return nil
 }
 
+func AgentsFragmentPath(root, reference string) (string, string, error) {
+	if reference == "" || filepath.IsAbs(reference) || strings.Contains(reference, "\\") {
+		return "", "", fmt.Errorf("invalid agents fragment path %q", reference)
+	}
+	parts := strings.Split(reference, "/")
+	for _, part := range parts {
+		if err := ValidateName(part); err != nil {
+			return "", "", fmt.Errorf("invalid agents fragment path %q: %w", reference, err)
+		}
+	}
+	relative := "agents-md/" + strings.Join(parts, "/") + ".md"
+	return filepath.Join(root, filepath.FromSlash(relative)), relative, nil
+}
+
+func ValidateAgentsFragment(path string) error {
+	if filepath.Ext(path) != ".md" {
+		return fmt.Errorf("agents fragment %q is not a Markdown file", path)
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("agents fragment %q does not exist", path)
+	}
+	if err != nil {
+		return fmt.Errorf("inspect agents fragment: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("agents fragment %q is not a regular file", path)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read agents fragment %q: %w", path, err)
+	}
+	if strings.TrimSpace(string(contents)) == "" {
+		return fmt.Errorf("agents fragment %q is empty", path)
+	}
+	return nil
+}
+
 func AddLocation(location string) (config.Source, error) {
 	if location == "" {
 		return config.Source{}, errors.New("source location is required")

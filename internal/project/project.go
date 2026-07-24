@@ -39,6 +39,62 @@ func ValidateAgentsFile(path string) error {
 	return nil
 }
 
+func PublishFile(from, to string) error {
+	info, err := os.Lstat(from)
+	if err != nil {
+		return fmt.Errorf("inspect source file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("source file %q is not a regular file", from)
+	}
+	parent := filepath.Dir(to)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return fmt.Errorf("create file destination: %w", err)
+	}
+	if _, err := os.Lstat(to); err == nil {
+		return fmt.Errorf("destination %q already exists", to)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect destination: %w", err)
+	}
+
+	temporary, err := os.CreateTemp(parent, "."+filepath.Base(to)+"-*")
+	if err != nil {
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+	if err := temporary.Chmod(info.Mode().Perm()); err != nil {
+		temporary.Close()
+		return fmt.Errorf("set temporary file permissions: %w", err)
+	}
+	input, err := os.Open(from)
+	if err != nil {
+		temporary.Close()
+		return fmt.Errorf("open source file: %w", err)
+	}
+	_, copyErr := io.Copy(temporary, input)
+	inputCloseErr := input.Close()
+	closeErr := temporary.Close()
+	if copyErr != nil {
+		return fmt.Errorf("copy file: %w", copyErr)
+	}
+	if inputCloseErr != nil {
+		return fmt.Errorf("close source file: %w", inputCloseErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close temporary file: %w", closeErr)
+	}
+	if _, err := os.Lstat(to); err == nil {
+		return fmt.Errorf("destination %q already exists", to)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect destination: %w", err)
+	}
+	if err := os.Rename(temporaryName, to); err != nil {
+		return fmt.Errorf("publish file: %w", err)
+	}
+	return nil
+}
+
 func CopySkill(from, to string, force bool) error {
 	if _, err := source.ValidateSkillDirectory(from); err != nil {
 		return err
