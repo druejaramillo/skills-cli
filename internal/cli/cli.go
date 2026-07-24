@@ -64,6 +64,8 @@ func (app *App) Run(ctx context.Context, args []string) error {
 		return app.runConfig(args[1:])
 	case "create":
 		return app.runCreate(ctx, args[1:])
+	case "agents":
+		return app.runAgents(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; run `skills --help`", args[0])
 	}
@@ -320,6 +322,80 @@ func (app *App) runCreate(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (app *App) runAgents(ctx context.Context, args []string) error {
+	if len(args) == 0 || isHelp(args[0]) || (args[0] == "create" && len(args) == 2 && isHelp(args[1])) {
+		fmt.Fprint(app.Stdout, "Usage: skills agents create [--source <name>] [--model <provider/model>] [--force]\n")
+		return nil
+	}
+	if args[0] != "create" {
+		return fmt.Errorf("unknown agents command %q", args[0])
+	}
+	positionals, flags, err := parseArgs(args[1:], map[string]bool{"source": true, "model": true, "force": false})
+	if err != nil {
+		return err
+	}
+	if len(positionals) != 0 {
+		return errors.New("usage: skills agents create [--source <name>] [--model <provider/model>] [--force]")
+	}
+	cfg, err := config.Load(app.ConfigPath)
+	if err != nil {
+		return err
+	}
+	sourceName, src, err := selectedSource(cfg, flags["source"])
+	if err != nil {
+		return err
+	}
+	sourceRoot, err := source.Prepare(ctx, src, sourceName, app.CacheDir)
+	if err != nil {
+		return err
+	}
+	fragments, err := source.DiscoverAgentsFragments(sourceRoot)
+	if err != nil {
+		return err
+	}
+	destination := project.AgentsPath(app.WorkingDir)
+	if info, err := os.Lstat(destination); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("AGENTS.md destination %q is not a regular file", destination)
+		}
+		if flags["force"] != "true" {
+			return fmt.Errorf("AGENTS.md %q already exists; use --force to replace it", destination)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect AGENTS.md destination: %w", err)
+	}
+	model := flags["model"]
+	if model == "" {
+		model = cfg.Creator.Model
+	}
+	fragmentPaths := make([]string, len(fragments))
+	for i, fragment := range fragments {
+		fragmentPaths[i] = fragment.RelativePath
+	}
+	if err := creator.RunAgents(ctx, creator.AgentsRequest{
+		ProjectPath:   app.WorkingDir,
+		SourceRoot:    sourceRoot,
+		FragmentPaths: fragmentPaths,
+		Model:         model,
+		Stdin:         app.Stdin,
+		Stdout:        app.Stdout,
+		Stderr:        app.Stderr,
+	}); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(destination); errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; nothing was generated.\n", destination)
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect generated AGENTS.md: %w", err)
+	}
+	if err := project.ValidateAgentsFile(destination); err != nil {
+		return err
+	}
+	fmt.Fprintf(app.Stdout, "Created %s from source %q.\n", destination, sourceName)
+	return nil
+}
+
 func selectedSource(cfg config.Config, requested string) (string, config.Source, error) {
 	name := requested
 	if name == "" {
@@ -394,8 +470,11 @@ Usage:
   skills config set creator.model <provider/model>
   skills config get creator.model
   skills create <skill-name> [--source <local-source>] [--model <provider/model>]
+  skills agents create [--source <name>] [--model <provider/model>] [--force]
 
 Run skills create to open an interactive OpenCode session that interviews you
 and creates a skill in .agents/skills before copying it to your local source.
+Run skills agents create to synthesize a project-root AGENTS.md from the
+selected source's agents-md fragments.
 `)
 }

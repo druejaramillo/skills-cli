@@ -18,6 +18,27 @@ func SkillPath(root, name string) (string, error) {
 	return filepath.Join(root, ".agents", "skills", name), nil
 }
 
+func AgentsPath(root string) string {
+	return filepath.Join(root, "AGENTS.md")
+}
+
+func ValidateAgentsFile(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("generated AGENTS.md %q does not exist", path)
+	}
+	if err != nil {
+		return fmt.Errorf("inspect generated AGENTS.md: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("generated AGENTS.md %q is not a regular file", path)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("generated AGENTS.md %q is empty", path)
+	}
+	return nil
+}
+
 func CopySkill(from, to string, force bool) error {
 	if _, err := source.ValidateSkillDirectory(from); err != nil {
 		return err

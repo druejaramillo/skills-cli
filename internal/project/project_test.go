@@ -67,6 +67,29 @@ func TestRemoveSkill(t *testing.T) {
 	}
 }
 
+func TestAgentsPathAndValidation(t *testing.T) {
+	root := t.TempDir()
+	path := AgentsPath(root)
+	if path != filepath.Join(root, "AGENTS.md") {
+		t.Fatalf("AgentsPath = %q", path)
+	}
+	if err := ValidateAgentsFile(path); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing AGENTS.md error = %v", err)
+	}
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAgentsFile(path); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("empty AGENTS.md error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("# Project guidance\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAgentsFile(path); err != nil {
+		t.Fatalf("ValidateAgentsFile: %v", err)
+	}
+}
+
 func writeSkill(t *testing.T, dir, name string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

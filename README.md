@@ -14,7 +14,7 @@ For a local checkout:
 go install ./cmd/skills
 ```
 
-`skills add` requires Git only for remote sources. `skills create` also requires [OpenCode](https://opencode.ai), plus an authenticated provider and model configured through `opencode providers`.
+`skills add` requires Git only for remote sources. `skills create` and `skills agents create` also require [OpenCode](https://opencode.ai), plus an authenticated provider and model configured through `opencode providers`.
 
 ## Sources
 
@@ -68,5 +68,31 @@ skills create tdd --source mine
 This opens OpenCode's normal interactive terminal UI, preloaded with instructions to interview you about the skill. Answer its follow-up questions in that session. OpenCode creates the result in the current project's `.agents/skills/tdd`; after you exit, `skills` validates it and copies it into the local source as `~/Code/my-skills/tdd`.
 
 Skills never commits or pushes. Review the source repository and commit or push it yourself.
+
+## Create AGENTS.md
+
+Sources can also provide Markdown fragments for project-level agent guidance. Put them below a source-root `agents-md/` directory; nested directories are supported:
+
+```text
+my-skills/
+  agents-md/
+    go.md
+    frontend/
+      htmx.md
+      tailwind.md
+```
+
+Use the same OpenCode model configuration as skill creation, then start an interactive session:
+
+```bash
+skills agents create
+skills agents create --source mine --model openai/gpt-5.6-terra
+```
+
+OpenCode inspects the project, asks about its stack and conventions, reads the relevant fragments from the selected source, and writes a concise `AGENTS.md` in the current project directory. Local sources are read directly; remote sources are refreshed in the cache before the session. Existing `AGENTS.md` files are protected unless `--force` is supplied:
+
+```bash
+skills agents create --force
+```
 
 Use `skills --help` for the complete command reference.

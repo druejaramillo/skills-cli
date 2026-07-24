@@ -24,6 +24,11 @@ type Skill struct {
 	RelativePath string
 }
 
+type AgentsFragment struct {
+	Path         string
+	RelativePath string
+}
+
 func ValidateName(name string) error {
 	if !namePattern.MatchString(name) || len(name) > 64 {
 		return fmt.Errorf("%q must use lowercase letters, numbers, and single hyphens (1-64 characters)", name)
@@ -140,6 +145,67 @@ func Discover(root string) ([]Skill, error) {
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].RelativePath < skills[j].RelativePath })
 	return skills, nil
+}
+
+func DiscoverAgentsFragments(root string) ([]AgentsFragment, error) {
+	fragmentsRoot := filepath.Join(root, "agents-md")
+	info, err := os.Stat(fragmentsRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("agents fragment directory %q does not exist", fragmentsRoot)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("inspect agents fragment directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("agents fragment path %q is not a directory", fragmentsRoot)
+	}
+
+	var fragments []AgentsFragment
+	err = filepath.WalkDir(fragmentsRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(entry.Name()) != ".md" {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("agents fragment %q must not be a symbolic link", path)
+		}
+		fileInfo, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect agents fragment %q: %w", path, err)
+		}
+		if !fileInfo.Mode().IsRegular() {
+			return fmt.Errorf("agents fragment %q is not a regular file", path)
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("read agents fragment %q: %w", path, err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close agents fragment %q: %w", path, err)
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return fmt.Errorf("make agents fragment path relative: %w", err)
+		}
+		fragments = append(fragments, AgentsFragment{Path: path, RelativePath: filepath.ToSlash(relative)})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan agents fragments: %w", err)
+	}
+	if len(fragments) == 0 {
+		return nil, fmt.Errorf("agents fragment directory %q contains no Markdown files", fragmentsRoot)
+	}
+	sort.Slice(fragments, func(i, j int) bool { return fragments[i].RelativePath < fragments[j].RelativePath })
+	return fragments, nil
 }
 
 func ValidateSkillDirectory(path string) (Skill, error) {

@@ -43,6 +43,39 @@ func TestDiscoverRejectsMalformedSkill(t *testing.T) {
 	}
 }
 
+func TestDiscoverAgentsFragments(t *testing.T) {
+	root := t.TempDir()
+	writeAgentsFragment(t, filepath.Join(root, "agents-md", "frontend", "tailwind.md"), "# Tailwind\n")
+	writeAgentsFragment(t, filepath.Join(root, "agents-md", "go.md"), "# Go\n")
+	if err := os.WriteFile(filepath.Join(root, "agents-md", "notes.txt"), []byte("ignore"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fragments, err := DiscoverAgentsFragments(root)
+	if err != nil {
+		t.Fatalf("DiscoverAgentsFragments: %v", err)
+	}
+	if len(fragments) != 2 {
+		t.Fatalf("DiscoverAgentsFragments returned %d fragments, want 2", len(fragments))
+	}
+	if fragments[0].RelativePath != "agents-md/frontend/tailwind.md" || fragments[1].RelativePath != "agents-md/go.md" {
+		t.Fatalf("fragment paths = %#v", fragments)
+	}
+}
+
+func TestDiscoverAgentsFragmentsRequiresMarkdown(t *testing.T) {
+	root := t.TempDir()
+	if _, err := DiscoverAgentsFragments(root); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing fragment directory error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "agents-md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscoverAgentsFragments(root); err == nil || !strings.Contains(err.Error(), "contains no Markdown") {
+		t.Fatalf("empty fragment directory error = %v", err)
+	}
+}
+
 func TestAddLocation(t *testing.T) {
 	src, err := AddLocation("acme/skills")
 	if err != nil {
@@ -91,6 +124,16 @@ func writeSkill(t *testing.T, dir, name string) {
 	}
 	contents := "---\nname: " + name + "\ndescription: Test skill.\n---\n\n# Test\n"
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeAgentsFragment(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

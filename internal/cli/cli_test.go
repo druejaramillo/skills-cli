@@ -91,6 +91,47 @@ func TestCreateWithoutSkillDoesNotPublish(t *testing.T) {
 	}
 }
 
+func TestAgentsCreateWritesProjectAGENTS(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper is a POSIX shell script")
+	}
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	writeAgentsFragment(t, filepath.Join(sourceRoot, "agents-md", "go.md"), "# Go\n")
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nprintf '%s\\n' '# Project guidance' > \"$1/AGENTS.md\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	app := testApp(t, root, sourceRoot, "test/model")
+	if err := app.Run(context.Background(), []string{"agents", "create"}); err != nil {
+		t.Fatalf("agents create: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(app.WorkingDir, "AGENTS.md")); err != nil {
+		t.Fatalf("AGENTS.md missing: %v", err)
+	}
+	if !strings.Contains(app.Stdout.(*bytes.Buffer).String(), "Created") {
+		t.Fatalf("agents create output = %q", app.Stdout.(*bytes.Buffer).String())
+	}
+}
+
+func TestAgentsCreateRequiresForce(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	writeAgentsFragment(t, filepath.Join(sourceRoot, "agents-md", "go.md"), "# Go\n")
+	app := testApp(t, root, sourceRoot, "test/model")
+	if err := os.WriteFile(filepath.Join(app.WorkingDir, "AGENTS.md"), []byte("existing\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"agents", "create"}); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("agents create collision error = %v", err)
+	}
+}
+
 func TestRemoveRemoteSourceClearsManagedCache(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "config.json")
@@ -145,6 +186,16 @@ func writeSkill(t *testing.T, dir, name string) {
 	}
 	contents := "---\nname: " + name + "\ndescription: Test skill.\n---\n\n# Test\n"
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeAgentsFragment(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
