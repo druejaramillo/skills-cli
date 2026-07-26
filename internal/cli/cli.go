@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -349,8 +350,11 @@ func (app *App) runCreate(ctx context.Context, args []string) error {
 func (app *App) runAgents(ctx context.Context, args []string) error {
 	if len(args) == 0 || isHelp(args[0]) {
 		fmt.Fprint(app.Stdout, `Usage:
-  skills agents create <fragment-path> [--source <local-source>] [--model <provider/model>]
-  skills agents generate [--source <name>] [--model <provider/model>] [--force]
+	  skills agents create <fragment-path> [--source <local-source>] [--model <provider/model>]
+	  skills agents revise <fragment-path> [--source <local-source>] [--model <provider/model>]
+	  skills agents validate [--source <name>] [--path <relative-dir>]
+	  skills agents generate [--source <name>] [--model <provider/model>] [--path <relative-dir>] [--force]
+	  skills agents update [--source <name>] [--model <provider/model>] [--path <relative-dir>]
 `)
 		return nil
 	}
@@ -361,12 +365,30 @@ func (app *App) runAgents(ctx context.Context, args []string) error {
 			return nil
 		}
 		return app.runAgentsCreate(ctx, args[1:])
+	case "revise":
+		if len(args) == 2 && isHelp(args[1]) {
+			fmt.Fprint(app.Stdout, "Usage: skills agents revise <fragment-path> [--source <local-source>] [--model <provider/model>]\n")
+			return nil
+		}
+		return app.runAgentsRevise(ctx, args[1:])
+	case "validate":
+		if len(args) == 2 && isHelp(args[1]) {
+			fmt.Fprint(app.Stdout, "Usage: skills agents validate [--source <name>] [--path <relative-dir>]\n")
+			return nil
+		}
+		return app.runAgentsValidate(ctx, args[1:])
 	case "generate":
 		if len(args) == 2 && isHelp(args[1]) {
-			fmt.Fprint(app.Stdout, "Usage: skills agents generate [--source <name>] [--model <provider/model>] [--force]\n")
+			fmt.Fprint(app.Stdout, "Usage: skills agents generate [--source <name>] [--model <provider/model>] [--path <relative-dir>] [--force]\n")
 			return nil
 		}
 		return app.runAgentsGenerate(ctx, args[1:])
+	case "update":
+		if len(args) == 2 && isHelp(args[1]) {
+			fmt.Fprint(app.Stdout, "Usage: skills agents update [--source <name>] [--model <provider/model>] [--path <relative-dir>]\n")
+			return nil
+		}
+		return app.runAgentsUpdate(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown agents command %q", args[0])
 	}
@@ -435,6 +457,9 @@ func (app *App) runAgentsCreate(ctx context.Context, args []string) error {
 	if err := source.ValidateAgentsFragment(stagingPath); err != nil {
 		return fmt.Errorf("created agents fragment was not published: %w", err)
 	}
+	if err := validateAgentsFragmentCandidate(sourceRoot, stagingPath, ""); err != nil {
+		return fmt.Errorf("created agents fragment was not published: %w", err)
+	}
 	if err := project.PublishFile(stagingPath, destination); err != nil {
 		return fmt.Errorf("publish agents fragment to source: %w", err)
 	}
@@ -442,13 +467,13 @@ func (app *App) runAgentsCreate(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (app *App) runAgentsGenerate(ctx context.Context, args []string) error {
-	positionals, flags, err := parseArgs(args, map[string]bool{"source": true, "model": true, "force": false})
+func (app *App) runAgentsRevise(ctx context.Context, args []string) error {
+	positionals, flags, err := parseArgs(args, map[string]bool{"source": true, "model": true})
 	if err != nil {
 		return err
 	}
-	if len(positionals) != 0 {
-		return errors.New("usage: skills agents generate [--source <name>] [--model <provider/model>] [--force]")
+	if len(positionals) != 1 {
+		return errors.New("usage: skills agents revise <fragment-path> [--source <local-source>] [--model <provider/model>]")
 	}
 	cfg, err := config.Load(app.ConfigPath)
 	if err != nil {
@@ -458,54 +483,334 @@ func (app *App) runAgentsGenerate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if src.Remote {
+		return fmt.Errorf("source %q is remote; skills agents revise needs a local source so it can leave changes for your Git review", sourceName)
+	}
 	sourceRoot, err := source.Prepare(ctx, src, sourceName, app.CacheDir)
 	if err != nil {
 		return err
 	}
-	fragments, err := source.DiscoverAgentsFragments(sourceRoot)
+	destination, relativePath, err := source.AgentsFragmentPath(sourceRoot, positionals[0])
 	if err != nil {
 		return err
 	}
-	destination := project.AgentsPath(app.WorkingDir)
-	if info, err := os.Lstat(destination); err == nil {
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("AGENTS.md destination %q is not a regular file", destination)
-		}
-		if flags["force"] != "true" {
-			return fmt.Errorf("AGENTS.md %q already exists; use --force to replace it", destination)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect AGENTS.md destination: %w", err)
+	info, err := os.Lstat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("agents fragment %q does not exist; use `skills agents create`", destination)
 	}
-	model := flags["model"]
-	if model == "" {
-		model = cfg.Creator.Model
+	if err != nil {
+		return fmt.Errorf("inspect agents fragment destination: %w", err)
 	}
-	fragmentPaths := make([]string, len(fragments))
-	for i, fragment := range fragments {
-		fragmentPaths[i] = fragment.RelativePath
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("agents fragment %q is not a regular file", destination)
 	}
-	if err := creator.RunAgents(ctx, creator.AgentsRequest{
-		ProjectPath:   app.WorkingDir,
-		SourceRoot:    sourceRoot,
-		FragmentPaths: fragmentPaths,
-		Model:         model,
-		Stdin:         app.Stdin,
-		Stdout:        app.Stdout,
-		Stderr:        app.Stderr,
+
+	stagingRoot, err := os.MkdirTemp(app.WorkingDir, ".skills-agents-*")
+	if err != nil {
+		return fmt.Errorf("create agents fragment staging directory: %w", err)
+	}
+	defer os.RemoveAll(stagingRoot)
+	stagingPath := filepath.Join(stagingRoot, filepath.FromSlash(relativePath))
+	model := creatorModel(cfg, flags)
+	if err := creator.RunAgentsFragmentRevision(ctx, creator.AgentsFragmentRequest{
+		ProjectPath:          app.WorkingDir,
+		SourceRoot:           sourceRoot,
+		FragmentPath:         relativePath,
+		ExistingFragmentPath: destination,
+		StagingPath:          stagingPath,
+		Model:                model,
+		Stdin:                app.Stdin,
+		Stdout:               app.Stdout,
+		Stderr:               app.Stderr,
 	}); err != nil {
 		return err
 	}
-	if _, err := os.Lstat(destination); errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; nothing was generated.\n", destination)
+	if _, err := os.Lstat(stagingPath); errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; the existing fragment was unchanged.\n", stagingPath)
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect revised agents fragment: %w", err)
+	}
+	if err := source.ValidateAgentsFragment(stagingPath); err != nil {
+		return fmt.Errorf("revised agents fragment was not published: %w", err)
+	}
+	if err := validateAgentsFragmentCandidate(sourceRoot, stagingPath, destination); err != nil {
+		return fmt.Errorf("revised agents fragment was not published: %w", err)
+	}
+	if err := project.ReplaceFile(stagingPath, destination); err != nil {
+		return fmt.Errorf("replace agents fragment in source: %w", err)
+	}
+	fmt.Fprintf(app.Stdout, "Revised %s at %s. Review and commit the source change yourself.\n", relativePath, destination)
+	return nil
+}
+
+func (app *App) runAgentsGenerate(ctx context.Context, args []string) error {
+	positionals, flags, err := parseArgs(args, map[string]bool{"source": true, "model": true, "path": true, "force": false})
+	if err != nil {
+		return err
+	}
+	if len(positionals) != 0 {
+		return errors.New("usage: skills agents generate [--source <name>] [--model <provider/model>] [--path <relative-dir>] [--force]")
+	}
+	composition, cfg, err := app.prepareAgentsComposition(ctx, flags, true)
+	if err != nil {
+		return err
+	}
+	if err := ensureAgentsDestination(composition.destination, flags["force"] == "true", false); err != nil {
+		return err
+	}
+	return app.renderAgents(ctx, cfg, flags, composition, false)
+}
+
+func (app *App) runAgentsUpdate(ctx context.Context, args []string) error {
+	positionals, flags, err := parseArgs(args, map[string]bool{"source": true, "model": true, "path": true})
+	if err != nil {
+		return err
+	}
+	if len(positionals) != 0 {
+		return errors.New("usage: skills agents update [--source <name>] [--model <provider/model>] [--path <relative-dir>]")
+	}
+	composition, cfg, err := app.prepareAgentsComposition(ctx, flags, true)
+	if err != nil {
+		return err
+	}
+	if err := ensureAgentsDestination(composition.destination, true, true); err != nil {
+		return err
+	}
+	return app.renderAgents(ctx, cfg, flags, composition, true)
+}
+
+func (app *App) runAgentsValidate(ctx context.Context, args []string) error {
+	positionals, flags, err := parseArgs(args, map[string]bool{"source": true, "path": true})
+	if err != nil {
+		return err
+	}
+	if len(positionals) != 0 {
+		return errors.New("usage: skills agents validate [--source <name>] [--path <relative-dir>]")
+	}
+	composition, _, err := app.prepareAgentsComposition(ctx, flags, false)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(app.Stdout, "Eligible fragments for %s:\n", composition.targetRelativeDir)
+	for _, fragment := range composition.fragments {
+		fmt.Fprintf(app.Stdout, "  %s\n", agentsFragmentSummary(fragment))
+	}
+	return nil
+}
+
+type agentsComposition struct {
+	sourceName        string
+	sourceRoot        string
+	targetRelativeDir string
+	destination       string
+	fragments         []source.AgentsFragment
+}
+
+func (app *App) prepareAgentsComposition(ctx context.Context, flags map[string]string, requireFragments bool) (agentsComposition, config.Config, error) {
+	cfg, err := config.Load(app.ConfigPath)
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	sourceName, src, err := selectedSource(cfg, flags["source"])
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	sourceRoot, err := source.Prepare(ctx, src, sourceName, app.CacheDir)
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	targetRelativeDir := flags["path"]
+	if targetRelativeDir == "" {
+		targetRelativeDir = "."
+	}
+	destination, err := project.AgentsPathAt(app.WorkingDir, targetRelativeDir)
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	fragments, diagnostics, err := source.InspectAgentsFragments(sourceRoot)
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	writeAgentsDiagnostics(app.Stdout, diagnostics)
+	if err := diagnostics.Err(); err != nil {
+		return agentsComposition{}, config.Config{}, fmt.Errorf("validate agents fragments: %w", err)
+	}
+	selected, err := source.SelectAgentsFragments(app.WorkingDir, targetRelativeDir, fragments)
+	if err != nil {
+		return agentsComposition{}, config.Config{}, err
+	}
+	if requireFragments && len(selected) == 0 {
+		return agentsComposition{}, config.Config{}, fmt.Errorf("no agents fragments are eligible for target %q", targetRelativeDir)
+	}
+	return agentsComposition{
+		sourceName:        sourceName,
+		sourceRoot:        sourceRoot,
+		targetRelativeDir: targetRelativeDir,
+		destination:       destination,
+		fragments:         selected,
+	}, cfg, nil
+}
+
+func (app *App) renderAgents(ctx context.Context, cfg config.Config, flags map[string]string, composition agentsComposition, update bool) error {
+	stagingRoot, err := os.MkdirTemp(app.WorkingDir, ".skills-agents-*")
+	if err != nil {
+		return fmt.Errorf("create AGENTS.md staging directory: %w", err)
+	}
+	defer os.RemoveAll(stagingRoot)
+	stagingPath := filepath.Join(stagingRoot, "AGENTS.md")
+	request := creator.AgentsRequest{
+		ProjectPath:       app.WorkingDir,
+		TargetRelativeDir: composition.targetRelativeDir,
+		TargetPath:        composition.destination,
+		StagingPath:       stagingPath,
+		SourceRoot:        composition.sourceRoot,
+		FragmentPaths:     agentsFragmentPaths(composition.fragments),
+		FragmentManifest:  agentsFragmentManifest(composition.fragments),
+		Model:             creatorModel(cfg, flags),
+		Stdin:             app.Stdin,
+		Stdout:            app.Stdout,
+		Stderr:            app.Stderr,
+	}
+	if update {
+		err = creator.RunAgentsUpdate(ctx, request)
+	} else {
+		err = creator.RunAgents(ctx, request)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(stagingPath); errors.Is(err, os.ErrNotExist) {
+		if update {
+			fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; the existing AGENTS.md was unchanged.\n", stagingPath)
+		} else {
+			fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; nothing was generated.\n", stagingPath)
+		}
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("inspect generated AGENTS.md: %w", err)
 	}
-	if err := project.ValidateAgentsFile(destination); err != nil {
+	if err := project.ValidateGeneratedAgentsFile(stagingPath, composition.targetRelativeDir); err != nil {
 		return err
 	}
-	fmt.Fprintf(app.Stdout, "Created %s from source %q.\n", destination, sourceName)
+	currentDestination, err := project.AgentsPathAt(app.WorkingDir, composition.targetRelativeDir)
+	if err != nil {
+		return fmt.Errorf("recheck AGENTS.md target after OpenCode session: %w", err)
+	}
+	if currentDestination != composition.destination {
+		return errors.New("AGENTS.md target changed during the OpenCode session")
+	}
+	if err := project.ReplaceFile(stagingPath, composition.destination); err != nil {
+		return fmt.Errorf("publish AGENTS.md: %w", err)
+	}
+	if update {
+		fmt.Fprintf(app.Stdout, "Updated %s from source %q.\n", composition.destination, composition.sourceName)
+	} else {
+		fmt.Fprintf(app.Stdout, "Created %s from source %q.\n", composition.destination, composition.sourceName)
+	}
+	return nil
+}
+
+func ensureAgentsDestination(destination string, allowExisting, requireExisting bool) error {
+	info, err := os.Lstat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		if requireExisting {
+			return fmt.Errorf("AGENTS.md %q does not exist; use `skills agents generate`", destination)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect AGENTS.md destination: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("AGENTS.md destination %q is not a regular file", destination)
+	}
+	if !allowExisting {
+		return fmt.Errorf("AGENTS.md %q already exists; use --force to replace it or `skills agents update` to reconcile it", destination)
+	}
+	return nil
+}
+
+func creatorModel(cfg config.Config, flags map[string]string) string {
+	if flags["model"] != "" {
+		return flags["model"]
+	}
+	return cfg.Creator.Model
+}
+
+func writeAgentsDiagnostics(output io.Writer, diagnostics source.AgentsDiagnostics) {
+	for _, diagnostic := range diagnostics.Warnings {
+		fmt.Fprintf(output, "Warning: %s: %s\n", diagnostic.Path, diagnostic.Message)
+	}
+	for _, diagnostic := range diagnostics.Errors {
+		fmt.Fprintf(output, "Error: %s: %s\n", diagnostic.Path, diagnostic.Message)
+	}
+}
+
+func agentsFragmentPaths(fragments []source.AgentsFragment) []string {
+	paths := make([]string, len(fragments))
+	for index, fragment := range fragments {
+		paths[index] = fragment.RelativePath
+	}
+	return paths
+}
+
+func agentsFragmentManifest(fragments []source.AgentsFragment) string {
+	lines := make([]string, 0, len(fragments))
+	for _, fragment := range fragments {
+		if fragment.Manifest == nil {
+			lines = append(lines, fragment.RelativePath+" (legacy, unclassified)")
+			continue
+		}
+		encoded, err := json.Marshal(fragment.Manifest)
+		if err != nil {
+			lines = append(lines, fragment.RelativePath)
+			continue
+		}
+		lines = append(lines, fragment.RelativePath+" "+string(encoded))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func agentsFragmentSummary(fragment source.AgentsFragment) string {
+	if fragment.Manifest == nil {
+		return fragment.RelativePath + " (legacy, unclassified)"
+	}
+	return fmt.Sprintf("%s (%s, %s)", fragment.RelativePath, fragment.Manifest.Layer, fragment.Manifest.ID)
+}
+
+func validateAgentsFragmentCandidate(sourceRoot, candidatePath, replacedPath string) error {
+	if _, err := os.Stat(filepath.Join(sourceRoot, "agents-md")); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect agents fragment directory: %w", err)
+	}
+	fragments, diagnostics, err := source.InspectAgentsFragments(sourceRoot)
+	if err != nil {
+		return err
+	}
+	if err := diagnostics.Err(); err != nil {
+		return fmt.Errorf("validate existing agents fragments: %w", err)
+	}
+	contents, err := os.ReadFile(candidatePath)
+	if err != nil {
+		return fmt.Errorf("read staged agents fragment: %w", err)
+	}
+	manifest, present, err := source.ParseAgentsManifest(contents)
+	if err != nil {
+		return fmt.Errorf("parse staged agents fragment manifest: %w", err)
+	}
+	if !present || manifest == nil {
+		return errors.New("staged agents fragment is missing a manifest")
+	}
+	for _, fragment := range fragments {
+		if fragment.Path == replacedPath || fragment.Manifest == nil {
+			continue
+		}
+		if fragment.Manifest.ID == manifest.ID {
+			return fmt.Errorf("manifest id %q is already used by %s", manifest.ID, fragment.RelativePath)
+		}
+	}
 	return nil
 }
 
@@ -585,11 +890,15 @@ Usage:
   skills config get creator.model
   skills create <skill-name> [--source <local-source>] [--model <provider/model>]
   skills agents create <fragment-path> [--source <local-source>] [--model <provider/model>]
-  skills agents generate [--source <name>] [--model <provider/model>] [--force]
+  skills agents revise <fragment-path> [--source <local-source>] [--model <provider/model>]
+  skills agents validate [--source <name>] [--path <relative-dir>]
+  skills agents generate [--source <name>] [--model <provider/model>] [--path <relative-dir>] [--force]
+  skills agents update [--source <name>] [--model <provider/model>] [--path <relative-dir>]
 
 Run skills create to open an interactive OpenCode session that interviews you
 and creates a skill in .agents/skills before copying it to your local source.
-Run skills agents create to author a source agents-md fragment, or skills
-agents generate to synthesize a project-root AGENTS.md from those fragments.
+Run skills agents create or revise to maintain source agents-md fragments.
+Use skills agents validate to inspect eligible fragments, then generate or update
+an OpenCode-targeted AGENTS.md from those fragments.
 `)
 }

@@ -15,8 +15,14 @@ var promptTemplate string
 //go:embed agents_prompt.md
 var agentsPromptTemplate string
 
+//go:embed agents_update_prompt.md
+var agentsUpdatePromptTemplate string
+
 //go:embed agents_fragment_prompt.md
 var agentsFragmentPromptTemplate string
+
+//go:embed agents_fragment_revise_prompt.md
+var agentsFragmentRevisePromptTemplate string
 
 type Request struct {
 	ProjectPath string
@@ -29,26 +35,31 @@ type Request struct {
 }
 
 type AgentsRequest struct {
-	ProjectPath   string
-	SourceRoot    string
-	FragmentPaths []string
-	Model         string
-	Command       string
-	Stdin         io.Reader
-	Stdout        io.Writer
-	Stderr        io.Writer
+	ProjectPath       string
+	TargetRelativeDir string
+	TargetPath        string
+	StagingPath       string
+	SourceRoot        string
+	FragmentPaths     []string
+	FragmentManifest  string
+	Model             string
+	Command           string
+	Stdin             io.Reader
+	Stdout            io.Writer
+	Stderr            io.Writer
 }
 
 type AgentsFragmentRequest struct {
-	ProjectPath  string
-	SourceRoot   string
-	FragmentPath string
-	StagingPath  string
-	Model        string
-	Command      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
+	ProjectPath          string
+	SourceRoot           string
+	FragmentPath         string
+	ExistingFragmentPath string
+	StagingPath          string
+	Model                string
+	Command              string
+	Stdin                io.Reader
+	Stdout               io.Writer
+	Stderr               io.Writer
 }
 
 func Run(ctx context.Context, request Request) error {
@@ -58,9 +69,12 @@ func Run(ctx context.Context, request Request) error {
 }
 
 func RunAgents(ctx context.Context, request AgentsRequest) error {
-	prompt := strings.ReplaceAll(agentsPromptTemplate, "{{PROJECT_PATH}}", request.ProjectPath)
-	prompt = strings.ReplaceAll(prompt, "{{SOURCE_ROOT}}", request.SourceRoot)
-	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATHS}}", strings.Join(request.FragmentPaths, "\n"))
+	prompt := expandAgentsPrompt(agentsPromptTemplate, request)
+	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
+}
+
+func RunAgentsUpdate(ctx context.Context, request AgentsRequest) error {
+	prompt := expandAgentsPrompt(agentsUpdatePromptTemplate, request)
 	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
 }
 
@@ -70,6 +84,30 @@ func RunAgentsFragment(ctx context.Context, request AgentsFragmentRequest) error
 	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATH}}", request.FragmentPath)
 	prompt = strings.ReplaceAll(prompt, "{{STAGING_PATH}}", request.StagingPath)
 	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
+}
+
+func RunAgentsFragmentRevision(ctx context.Context, request AgentsFragmentRequest) error {
+	prompt := strings.ReplaceAll(agentsFragmentRevisePromptTemplate, "{{PROJECT_PATH}}", request.ProjectPath)
+	prompt = strings.ReplaceAll(prompt, "{{SOURCE_ROOT}}", request.SourceRoot)
+	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATH}}", request.FragmentPath)
+	prompt = strings.ReplaceAll(prompt, "{{EXISTING_FRAGMENT_PATH}}", request.ExistingFragmentPath)
+	prompt = strings.ReplaceAll(prompt, "{{STAGING_PATH}}", request.StagingPath)
+	return run(ctx, request.ProjectPath, request.Model, request.Command, prompt, request.Stdin, request.Stdout, request.Stderr)
+}
+
+func expandAgentsPrompt(template string, request AgentsRequest) string {
+	manifest := request.FragmentManifest
+	if manifest == "" {
+		manifest = strings.Join(request.FragmentPaths, "\n")
+	}
+	prompt := strings.ReplaceAll(template, "{{PROJECT_PATH}}", request.ProjectPath)
+	prompt = strings.ReplaceAll(prompt, "{{TARGET_RELATIVE_DIR}}", request.TargetRelativeDir)
+	prompt = strings.ReplaceAll(prompt, "{{TARGET_PATH}}", request.TargetPath)
+	prompt = strings.ReplaceAll(prompt, "{{STAGING_PATH}}", request.StagingPath)
+	prompt = strings.ReplaceAll(prompt, "{{SOURCE_ROOT}}", request.SourceRoot)
+	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_MANIFEST}}", manifest)
+	prompt = strings.ReplaceAll(prompt, "{{FRAGMENT_PATHS}}", strings.Join(request.FragmentPaths, "\n"))
+	return prompt
 }
 
 func run(ctx context.Context, projectPath, model, command, prompt string, stdin io.Reader, stdout, stderr io.Writer) error {
