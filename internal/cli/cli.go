@@ -337,8 +337,12 @@ func (app *App) runCreate(ctx context.Context, args []string) error {
 		fmt.Fprintf(app.Stdout, "OpenCode exited without creating %s; nothing was published.\n", projectDestination)
 		return nil
 	}
-	if _, err := source.ValidateSkillDirectory(projectDestination); err != nil {
+	createdSkill, err := source.ValidateSkillDirectory(projectDestination)
+	if err != nil {
 		return fmt.Errorf("created skill was not published: %w", err)
+	}
+	if createdSkill.Name != skillName {
+		return fmt.Errorf("created skill was not published: frontmatter name %q does not match requested skill name %q", createdSkill.Name, skillName)
 	}
 	if err := project.CopySkill(projectDestination, sourceDestination, false); err != nil {
 		return fmt.Errorf("publish skill to source: %w", err)

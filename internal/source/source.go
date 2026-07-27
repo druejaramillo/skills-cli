@@ -915,10 +915,6 @@ func agentsProjectPath(root, reference string) (string, bool, error) {
 }
 
 func ValidateSkillDirectory(path string) (Skill, error) {
-	name := filepath.Base(path)
-	if err := ValidateName(name); err != nil {
-		return Skill{}, fmt.Errorf("invalid skill directory %q: %w", path, err)
-	}
 	file, err := os.Open(filepath.Join(path, "SKILL.md"))
 	if err != nil {
 		return Skill{}, fmt.Errorf("read skill %q: %w", path, err)
@@ -929,16 +925,13 @@ func ValidateSkillDirectory(path string) (Skill, error) {
 	if err != nil {
 		return Skill{}, fmt.Errorf("invalid SKILL.md in %q: %w", path, err)
 	}
-	if frontmatterName != name {
-		return Skill{}, fmt.Errorf("skill directory %q does not match frontmatter name %q", name, frontmatterName)
-	}
 	if err := ValidateName(frontmatterName); err != nil {
 		return Skill{}, fmt.Errorf("invalid frontmatter name: %w", err)
 	}
 	if description == "" {
 		return Skill{}, fmt.Errorf("invalid SKILL.md in %q: description is required", path)
 	}
-	return Skill{Name: name, Path: path}, nil
+	return Skill{Name: frontmatterName, Path: path}, nil
 }
 
 func ReadSkillFrontmatter(path string) (name, description string, present bool, err error) {
@@ -1007,15 +1000,33 @@ func Resolve(skills []Skill, reference string) (Skill, error) {
 	if cleaned == "." || strings.HasPrefix(cleaned, "../") {
 		return Skill{}, fmt.Errorf("invalid skill reference %q", reference)
 	}
-	for _, skill := range skills {
-		if skill.RelativePath == cleaned {
-			return skill, nil
+	if strings.Contains(cleaned, "/") {
+		for _, skill := range skills {
+			if skill.RelativePath == cleaned {
+				return skill, nil
+			}
 		}
 	}
 
 	var matches []Skill
 	for _, skill := range skills {
 		if skill.Name == cleaned {
+			matches = append(matches, skill)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		paths := make([]string, len(matches))
+		for i, match := range matches {
+			paths[i] = match.RelativePath
+		}
+		return Skill{}, fmt.Errorf("skill %q is ambiguous; use one of: %s", reference, strings.Join(paths, ", "))
+	}
+
+	for _, skill := range skills {
+		if filepath.Base(skill.Path) == cleaned {
 			matches = append(matches, skill)
 		}
 	}

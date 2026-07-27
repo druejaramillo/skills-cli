@@ -35,11 +35,31 @@ func TestDiscoverAndResolve(t *testing.T) {
 	}
 }
 
-func TestDiscoverRejectsMalformedSkill(t *testing.T) {
+func TestDiscoverResolvesMismatchedSkillNames(t *testing.T) {
 	root := t.TempDir()
-	writeSkill(t, filepath.Join(root, "wrong-directory"), "other-name")
-	if _, err := Discover(root); err == nil || !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("Discover malformed skill error = %v, want mismatch error", err)
+	writeSkill(t, filepath.Join(root, "legacy-directory"), "shared-name")
+	writeSkill(t, filepath.Join(root, "shared-name"), "other-name")
+
+	skills, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if skills[0].Name != "shared-name" {
+		t.Fatalf("discovered skill name = %q, want frontmatter name", skills[0].Name)
+	}
+	byFrontmatter, err := Resolve(skills, "shared-name")
+	if err != nil {
+		t.Fatalf("Resolve frontmatter name: %v", err)
+	}
+	if byFrontmatter.RelativePath != "legacy-directory" {
+		t.Fatalf("frontmatter name resolved %q, want legacy-directory", byFrontmatter.RelativePath)
+	}
+	byDirectory, err := Resolve(skills, "legacy-directory")
+	if err != nil {
+		t.Fatalf("Resolve directory name: %v", err)
+	}
+	if byDirectory.RelativePath != "legacy-directory" {
+		t.Fatalf("directory name resolved %q, want legacy-directory", byDirectory.RelativePath)
 	}
 }
 

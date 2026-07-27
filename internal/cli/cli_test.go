@@ -33,6 +33,20 @@ func TestAddAndRemove(t *testing.T) {
 	}
 }
 
+func TestAddFindsMismatchedSkillByDirectoryName(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	writeSkill(t, filepath.Join(sourceRoot, "legacy-tdd"), "tdd")
+	app := testApp(t, root, sourceRoot, "")
+	if err := app.Run(context.Background(), []string{"add", "legacy-tdd"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	installed := filepath.Join(app.WorkingDir, ".agents", "skills", "tdd", "SKILL.md")
+	if _, err := os.Stat(installed); err != nil {
+		t.Fatalf("installed skill missing: %v", err)
+	}
+}
+
 func TestListSkills(t *testing.T) {
 	root := t.TempDir()
 	app := &App{

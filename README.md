@@ -28,7 +28,7 @@ skills source list
 
 Local sources are read directly, so uncommitted changes are available immediately. Remote sources are shallow-cloned into the user cache and refreshed before each read.
 
-A source can organize skills in nested directories. Every skill must be a directory containing a `SKILL.md` with YAML frontmatter. The directory name and frontmatter `name` must match and use lowercase letters, numbers, and hyphens:
+A source can organize skills in nested directories. Every skill must be a directory containing a `SKILL.md` with YAML frontmatter. The frontmatter `name` must use lowercase letters, numbers, and hyphens; source directory names may differ.
 
 ```text
 my-skills/
@@ -40,7 +40,7 @@ my-skills/
 
 ## Install and Remove Skills
 
-Install a skill by its unique name or its source-relative path:
+Install a skill by its unique frontmatter name, parent directory name, or source-relative path. Frontmatter names take precedence over matching directory names:
 
 ```bash
 skills add tdd
