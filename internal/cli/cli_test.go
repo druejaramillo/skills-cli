@@ -141,7 +141,7 @@ func TestAgentsGenerateWritesProjectAGENTS(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\nstaging=$(printf '%s' \"$5\" | tr '\\n' ' ' | cut -d '`' -f2)\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' '<!-- skills-agents-output: {\"version\":1,\"runtime\":\"opencode-local\",\"target\":\".\"} -->' '# Project guidance' > \"$staging\"\n"
+	script := "#!/bin/sh\nstaging=$(printf '%s' \"$7\" | tr '\\n' ' ' | cut -d '`' -f2)\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' '<!-- skills-agents-output: {\"version\":1,\"runtime\":\"opencode-local\",\"target\":\".\"} -->' '# Project guidance' > \"$staging\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestAgentsCreatePublishesFragment(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\nstaging=$(printf '%s' \"$5\" | tr '\\n' ' ' | cut -d '`' -f4)\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' '<!-- skills-agents: {\"version\":1,\"id\":\"htmx\",\"layer\":\"stack\",\"scope\":\"project\",\"relationship\":\"all\",\"owner\":\"maintainers\",\"canonical\":[\"docs/frontend.md\"],\"review_on\":[\"htmx changes\"]} -->' '# HTMX' 'Use server-rendered HTML.' > \"$staging\"\n"
+	script := "#!/bin/sh\nstaging=$(printf '%s' \"$7\" | tr '\\n' ' ' | cut -d '`' -f4)\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' '<!-- skills-agents: {\"version\":1,\"id\":\"htmx\",\"layer\":\"stack\",\"scope\":\"project\",\"relationship\":\"all\",\"owner\":\"maintainers\",\"canonical\":[\"docs/frontend.md\"],\"review_on\":[\"htmx changes\"]} -->' '# HTMX' 'Use server-rendered HTML.' > \"$staging\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +590,7 @@ func installStageWritingOpenCode(t *testing.T, bin string, promptField int, outp
 	for index, line := range lines {
 		quotedLines[index] = "'" + strings.ReplaceAll(line, "'", "'\"'\"'") + "'"
 	}
-	script := "#!/bin/sh\nstaging=$(printf '%s' \"$5\" | tr '\\n' ' ' | cut -d '`' -f" + strconv.Itoa(promptField) + ")\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' " + strings.Join(quotedLines, " ") + " > \"$staging\"\n"
+	script := "#!/bin/sh\nstaging=$(printf '%s' \"$7\" | tr '\\n' ' ' | cut -d '`' -f" + strconv.Itoa(promptField) + ")\nmkdir -p \"$(dirname \"$staging\")\"\nprintf '%s\\n' " + strings.Join(quotedLines, " ") + " > \"$staging\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

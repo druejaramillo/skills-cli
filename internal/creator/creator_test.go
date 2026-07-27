@@ -33,6 +33,30 @@ func TestRunRequiresModel(t *testing.T) {
 	}
 }
 
+func TestRunUsesPlanAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper is a POSIX shell script")
+	}
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	command := filepath.Join(t.TempDir(), "fake-opencode")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsPath + "\"\n"
+	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	if err := Run(context.Background(), Request{ProjectPath: project, SkillName: "tdd", Model: "test/model", Command: command}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSpace(string(args)), "\n")
+	if len(got) < 5 || got[0] != project || got[1] != "--agent" || got[2] != "plan" || got[3] != "--model" || got[4] != "test/model" {
+		t.Fatalf("args = %q, want project --agent plan --model test/model ...", got)
+	}
+}
+
 func TestRunAgentsExpandsFragmentManifest(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
@@ -40,7 +64,7 @@ func TestRunAgentsExpandsFragmentManifest(t *testing.T) {
 	project := t.TempDir()
 	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
 	command := filepath.Join(t.TempDir(), "fake-opencode")
-	script := "#!/bin/sh\nprintf '%s' \"$5\" > \"" + promptPath + "\"\n"
+	script := "#!/bin/sh\nprintf '%s' \"$7\" > \"" + promptPath + "\"\n"
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +97,7 @@ func TestRunAgentsUpdateExpandsStagingAndReconciliationPrompt(t *testing.T) {
 	project := t.TempDir()
 	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
 	command := filepath.Join(t.TempDir(), "fake-opencode")
-	script := "#!/bin/sh\nprintf '%s' \"$5\" > \"" + promptPath + "\"\n"
+	script := "#!/bin/sh\nprintf '%s' \"$7\" > \"" + promptPath + "\"\n"
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +129,7 @@ func TestRunAgentsFragmentExpandsOutputPath(t *testing.T) {
 	project := t.TempDir()
 	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
 	command := filepath.Join(t.TempDir(), "fake-opencode")
-	script := "#!/bin/sh\nprintf '%s' \"$5\" > \"" + promptPath + "\"\n"
+	script := "#!/bin/sh\nprintf '%s' \"$7\" > \"" + promptPath + "\"\n"
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +159,7 @@ func TestRunAgentsFragmentRevisionExpandsExistingPath(t *testing.T) {
 	project := t.TempDir()
 	promptPath := filepath.Join(t.TempDir(), "prompt.txt")
 	command := filepath.Join(t.TempDir(), "fake-opencode")
-	script := "#!/bin/sh\nprintf '%s' \"$5\" > \"" + promptPath + "\"\n"
+	script := "#!/bin/sh\nprintf '%s' \"$7\" > \"" + promptPath + "\"\n"
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

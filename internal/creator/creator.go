@@ -117,7 +117,7 @@ func run(ctx context.Context, projectPath, model, command, prompt string, stdin 
 	if command == "" {
 		command = "opencode"
 	}
-	cmd := exec.CommandContext(ctx, command, projectPath, "--model", model, "--prompt", prompt)
+	cmd := exec.CommandContext(ctx, command, projectPath, "--agent", "plan", "--model", model, "--prompt", prompt)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
